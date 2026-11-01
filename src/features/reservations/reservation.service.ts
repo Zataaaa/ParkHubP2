@@ -1,7 +1,13 @@
 import { isValidObjectId } from 'mongoose';
 import { ParkingSpot } from '../parking-spots/parking-spot.model';
 import { Reservation } from './reservation.model';
-import { canReserveSpot, hasTimeConflict, validateReservationPeriod } from './reservation.rules';
+import {
+  canReserveSpot,
+  hasTimeConflict,
+  isReservationExtendable,
+  validateExtensionEndTime,
+  validateReservationPeriod
+} from './reservation.rules';
 
 export class ReservationError extends Error {
   constructor(public status: 400 | 404 | 409, message: string) {
@@ -68,9 +74,49 @@ export async function cancelReservation(id: string) {
 }
 
 export async function extendReservation(id: string, endTime: unknown) {
-  // TODO PRACTICE 2:
-  // Implement the extension flow: locate the reservation, check whether it
-  // can be extended, validate the request, check the spot's schedule, then
-  // save the updated reservation. Use ReservationError for domain failures.
-  throw new Error('Reservation extension is not implemented yet');
+  // 1. Locate the reservation (a malformed id cannot match any document).
+  if (!isValidObjectId(id)) {
+    throw new ReservationError(404, 'Reservation not found');
+  }
+
+  const reservation = await Reservation.findById(id);
+  if (!reservation) {
+    throw new ReservationError(404, 'Reservation not found');
+  }
+
+  // 2. It must be ACTIVE and still in force.
+  const now = new Date();
+  if (!isReservationExtendable(reservation.status ?? '', reservation.endTime, now)) {
+    throw new ReservationError(409, 'Reservation cannot be extended');
+  }
+
+  // 3. The new end time must be a valid date strictly after the current one.
+  const newEnd = validateExtensionEndTime(reservation.endTime, endTime, now);
+  if (!newEnd) {
+    throw new ReservationError(400, 'End time must be a valid date later than the current end time');
+  }
+
+  // 4. Look for other ACTIVE reservations of the same spot in the new range.
+  //    The reservation itself is excluded; CANCELLED ones never block.
+  const overlappingReservations = await Reservation.find({
+    parkingSpotId: reservation.parkingSpotId,
+    status: 'ACTIVE',
+    _id: { $ne: reservation._id },
+    startTime: { $lt: newEnd },
+    endTime: { $gt: reservation.startTime }
+  });
+
+  const hasConflict = overlappingReservations.some((other) =>
+    hasTimeConflict(reservation.startTime, newEnd, other.startTime, other.endTime)
+  );
+
+  if (hasConflict) {
+    throw new ReservationError(409, 'Parking spot is not available for this time range');
+  }
+
+  // 5. Persist only now that every rule passed.
+  reservation.endTime = newEnd;
+  await reservation.save();
+
+  return reservation;
 }

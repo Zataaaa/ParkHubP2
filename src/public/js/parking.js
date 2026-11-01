@@ -210,9 +210,23 @@ function renderReservations() {
 
     if (isCurrent) {
       const actions = makeElement('div', 'reservation-actions');
-      // TODO PRACTICE 2:
-      // Add an extension action for eligible reservations and connect it to
-      // the extension form. Keep the cancellation action working.
+      const extendButton = makeElement('button', 'button button-secondary', 'Extender');
+      extendButton.type = 'button';
+      extendButton.setAttribute('aria-expanded', 'false');
+      extendButton.setAttribute('aria-label', `Extender la reservación del espacio ${number}`);
+      extendButton.addEventListener('click', () => {
+        const openForm = card.querySelector('.extend-form');
+        if (openForm) {
+          openForm.remove();
+          extendButton.textContent = 'Extender';
+          extendButton.setAttribute('aria-expanded', 'false');
+          return;
+        }
+        card.append(createExtendForm(reservation));
+        extendButton.textContent = 'Cerrar';
+        extendButton.setAttribute('aria-expanded', 'true');
+        card.querySelector('.extend-form input').focus();
+      });
       const cancelButton = makeElement('button', 'button button-danger', 'Cancelar');
       cancelButton.type = 'button';
       cancelButton.addEventListener('click', () => {
@@ -224,7 +238,7 @@ function renderReservations() {
         }
         cancelReservation(reservation._id, cancelButton);
       });
-      actions.append(cancelButton);
+      actions.append(extendButton, cancelButton);
       card.append(actions);
     }
     reservationsList.append(card);
@@ -243,9 +257,68 @@ function createExtendForm(reservation) {
   const message = makeElement('p', 'extend-message');
   message.setAttribute('role', 'alert');
   form.append(label, button, message);
-  // TODO PRACTICE 2:
-  // Read the requested time, send the extension request, handle the result,
-  // and refresh the affected views when the operation succeeds.
+
+  // Suggest one extra hour and do not offer a time before the current end.
+  const currentEnd = new Date(reservation.endTime);
+  input.value = localDateTime(new Date(currentEnd.getTime() + 3600000));
+  input.min = localDateTime(new Date(currentEnd.getTime() + 60000));
+
+  const showError = (text) => {
+    message.textContent = text;
+    message.className = 'extend-message';
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showError('');
+    const requested = new Date(input.value);
+    if (!input.value || Number.isNaN(requested.getTime())) {
+      showError('Elige una nueva hora final válida.');
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Guardando...';
+    try {
+      const response = await fetch(`/api/reservations/${reservation._id}/extend`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endTime: requested.toISOString() })
+      });
+
+      // fetch() does not reject on 4xx/5xx, so the status is checked explicitly.
+      if (response.status === 400) {
+        showError('La nueva hora final no es válida: debe ser posterior a la hora final actual.');
+        return;
+      }
+      if (response.status === 409 || response.status === 404) {
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 409 && /not available/i.test(body.message ?? '')) {
+          showError('No se puede extender: el espacio ya está reservado en ese horario.');
+          return;
+        }
+        // The reservation changed or disappeared: refresh so the list is accurate.
+        await Promise.all([loadReservations(), loadSpots()]);
+        setMessage(reservationsMessage, response.status === 404
+          ? 'La reservación ya no existe.'
+          : 'Esta reservación ya no se puede extender (está cancelada o ya terminó).', 'error');
+        return;
+      }
+      if (!response.ok) throw new Error('Could not extend reservation');
+
+      const updated = await response.json();
+      await Promise.all([loadReservations(), loadSpots()]);
+      setMessage(reservationsMessage,
+        `Reservación extendida correctamente. Nuevo fin: ${timeFormatter.format(new Date(updated.endTime))}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      showError('No fue posible extender la reservación. Intenta de nuevo.');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Guardar extensión';
+    }
+  });
+
   return form;
 }
 

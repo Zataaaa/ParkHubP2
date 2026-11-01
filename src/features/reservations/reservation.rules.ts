@@ -26,18 +26,35 @@ export function canReserveSpot(active: boolean, hasConflict: boolean) {
   return active && !hasConflict;
 }
 
+/**
+ * Pure rule: is `newEndTime` a valid extension of a reservation that currently
+ * ends at `currentEnd`? Returns the parsed date, or null when it is not valid.
+ *
+ * Valid means: it is a string, it parses to a real date, and it is strictly
+ * after both the current end time and the current moment.
+ */
 export function validateExtensionEndTime(
   currentEnd: Date,
   newEndTime: unknown,
   now: Date
 ): Date | null {
-  // TODO PRACTICE 2:
-  // Determine whether the requested end time is a valid extension of the
-  // current reservation. Return the parsed date only when it is valid.
-  return null;
+  if (typeof newEndTime !== 'string') {
+    return null;
+  }
+
+  const newEnd = new Date(newEndTime);
+
+  if (Number.isNaN(newEnd.getTime()) || newEnd <= currentEnd || newEnd <= now) {
+    return null;
+  }
+
+  return newEnd;
 }
 
+/**
+ * Pure rule: only an ACTIVE reservation that has not ended yet can be extended.
+ * A reservation ending exactly at `now` has already finished.
+ */
 export function isReservationExtendable(status: string, endTime: Date, now: Date): boolean {
-  // TODO PRACTICE 2: a reservation can be extended only while it is ACTIVE and has not ended.
-  return false;
+  return status === 'ACTIVE' && endTime > now;
 }
