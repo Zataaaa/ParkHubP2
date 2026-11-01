@@ -36,3 +36,8 @@ export function validateExtensionEndTime(
   // current reservation. Return the parsed date only when it is valid.
   return null;
 }
+
+export function isReservationExtendable(status: string, endTime: Date, now: Date): boolean {
+  // TODO PRACTICE 2: a reservation can be extended only while it is ACTIVE and has not ended.
+  return false;
+}
