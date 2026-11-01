@@ -309,7 +309,7 @@ function createExtendForm(reservation) {
       const updated = await response.json();
       await Promise.all([loadReservations(), loadSpots()]);
       setMessage(reservationsMessage,
-        `Reservación extendida correctamente. Nuevo fin: ${timeFormatter.format(new Date(updated.endTime))}.`, 'success');
+        `Reservación extendida correctamente. Nuevo fin: ${timeFormatter.format(new Date(updated.endTime))}`, 'success');
     } catch (error) {
       console.error(error);
       showError('No fue posible extender la reservación. Intenta de nuevo.');
